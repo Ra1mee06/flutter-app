@@ -1,0 +1,10 @@
+# Скопируйте в local.properties (файл создаётся автоматически при flutter run).
+# Пути ниже — примеры, подставьте свои.
+
+sdk.dir=C:/Users/YOUR_USER/AppData/Local/Android/sdk
+flutter.sdk=C:/path/to/flutter
+
+# Необязательно: JDK для сборки Android, если в системе битый JAVA_HOME.
+# Используйте прямые слэши / — так работает на Windows, macOS и Linux.
+# jdk.dir=C:/Program Files/Java/jdk-21
+# jdk.dir=/Applications/Android Studio.app/Contents/jbr/Contents/Home

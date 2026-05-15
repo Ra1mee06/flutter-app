@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -8,6 +9,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'privacy_policy_content.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -82,10 +84,12 @@ class MoneyCalculatorApp extends StatelessWidget {
         ),
       ),
       themeMode: settings.themeMode,
-      home: const MainNavigationScreen(),
+      home: const AppEntry(),
     );
   }
 }
+
+const String _privacyPolicyAcceptedKey = 'privacy_policy_accepted';
 
 // ==================== МОДЕЛИ ДАННЫХ ====================
 
@@ -374,6 +378,17 @@ class TransactionProvider with ChangeNotifier {
     return result;
   }
 
+  List<Transaction> getTransactionsByCategory(
+    String categoryId, {
+    TransactionType? type,
+  }) {
+    return _transactions
+        .where((tx) => tx.category.id == categoryId)
+        .where((tx) => type == null || tx.type == type)
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+  }
+
   List<Map<String, dynamic>> getMonthlyStats() {
     Map<String, double> incomeByMonth = {};
     Map<String, double> expenseByMonth = {};
@@ -532,6 +547,298 @@ class SettingsProvider with ChangeNotifier {
 }
 
 // ==================== UI КОМПОНЕНТЫ ====================
+
+class AppEntry extends StatefulWidget {
+  const AppEntry({super.key});
+
+  @override
+  State<AppEntry> createState() => _AppEntryState();
+}
+
+class _AppEntryState extends State<AppEntry> {
+  bool? _policyAccepted;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPolicyStatus();
+  }
+
+  Future<void> _loadPolicyStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _policyAccepted = prefs.getBool(_privacyPolicyAcceptedKey) ?? false;
+    });
+  }
+
+  Future<void> _onPolicyAccepted() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_privacyPolicyAcceptedKey, true);
+    if (!mounted) return;
+    setState(() => _policyAccepted = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_policyAccepted == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_policyAccepted!) {
+      return const MainNavigationScreen();
+    }
+    return PrivacyPolicyScreen(
+      onAccepted: _onPolicyAccepted,
+      onDeclined: () => SystemNavigator.pop(),
+    );
+  }
+}
+
+class PrivacyPolicyScreen extends StatefulWidget {
+  final Future<void> Function() onAccepted;
+  final VoidCallback onDeclined;
+
+  const PrivacyPolicyScreen({
+    super.key,
+    required this.onAccepted,
+    required this.onDeclined,
+  });
+
+  @override
+  State<PrivacyPolicyScreen> createState() => _PrivacyPolicyScreenState();
+}
+
+class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen> {
+  bool _agreed = false;
+  bool _isSaving = false;
+
+  Future<void> _accept() async {
+    if (!_agreed || _isSaving) return;
+    setState(() => _isSaving = true);
+    await widget.onAccepted();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) widget.onDeclined();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Политика конфиденциальности'),
+          automaticallyImplyLeading: false,
+        ),
+        body: Column(
+          children: [
+            Expanded(
+              child: SelectionArea(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  children: [
+                    Text(
+                      'Версия $privacyPolicyVersion · действует с $privacyPolicyEffectiveDate',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...privacyPolicySections.map(
+                      (section) => Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  section.title,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  section.body,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(height: 1.5),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    CheckboxListTile(
+                      value: _agreed,
+                      onChanged: _isSaving
+                          ? null
+                          : (value) => setState(() => _agreed = value ?? false),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Я ознакомился(ась) и принимаю условия',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton(
+                      onPressed: _agreed && !_isSaving ? _accept : null,
+                      child: _isSaving
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Принять и продолжить'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: _isSaving ? null : widget.onDeclined,
+                      child: const Text('Отказаться'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CategoryTransactionsScreen extends StatelessWidget {
+  final TransactionCategory category;
+
+  const CategoryTransactionsScreen({
+    super.key,
+    required this.category,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final transactionProvider = Provider.of<TransactionProvider>(context);
+    final settings = Provider.of<SettingsProvider>(context);
+    final transactions = transactionProvider.getTransactionsByCategory(
+      category.id,
+      type: category.type,
+    );
+    final total = transactions.fold<double>(
+      0,
+      (sum, tx) => sum + tx.amount,
+    );
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(category.name),
+      ),
+      body: transactions.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(category.icon, size: 64, color: category.color),
+                  const SizedBox(height: 16),
+                  Text(
+                    'В категории «${category.name}» пока нет операций',
+                    style: Theme.of(context).textTheme.titleMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            )
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Card(
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: category.color.withOpacity(0.2),
+                        child: Icon(category.icon, color: category.color),
+                      ),
+                      title: Text(
+                        category.type == TransactionType.expense
+                            ? 'Всего потрачено'
+                            : 'Всего получено',
+                      ),
+                      trailing: Text(
+                        '${total.toStringAsFixed(0)} ${settings.currency}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: category.type == TransactionType.expense
+                              ? Colors.red
+                              : Colors.green,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: transactions.length,
+                    itemBuilder: (context, index) {
+                      final tx = transactions[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          title: Text(
+                            tx.title,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                DateFormat('dd MMM yyyy, HH:mm', 'ru')
+                                    .format(tx.date),
+                              ),
+                              if (tx.note != null)
+                                Text(
+                                  tx.note!,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                            ],
+                          ),
+                          trailing: Text(
+                            '${tx.type == TransactionType.income ? '+' : '-'} '
+                            '${tx.amount.toStringAsFixed(0)} ${settings.currency}',
+                            style: TextStyle(
+                              color: tx.type == TransactionType.income
+                                  ? Colors.green
+                                  : Colors.red,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -849,10 +1156,22 @@ class AnalyticsScreen extends StatelessWidget {
                                   child: Icon(entry.key.icon, color: entry.key.color, size: 20),
                                 ),
                                 title: Text(entry.key.name),
+                                subtitle: const Text('Нажмите, чтобы увидеть покупки'),
                                 trailing: Text(
                                   '${entry.value.toStringAsFixed(0)} ${settings.currency} (${percentage.toStringAsFixed(1)}%)',
                                   style: const TextStyle(fontWeight: FontWeight.bold),
                                 ),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          CategoryTransactionsScreen(
+                                        category: entry.key,
+                                      ),
+                                    ),
+                                  );
+                                },
                               );
                             },
                           ),
